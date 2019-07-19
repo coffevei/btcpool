@@ -12,8 +12,9 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE} as build
 LABEL maintainer="Hanjiang Yu <hanjiang.yu@bitmain.com>"
 
+ARG GIT_DESCRIBE=""
 ARG BUILD_JOBS=1
-ARG BUILD_TESTING=OFF
+ARG BUILD_TESTING=ON
 ARG BUILD_TYPE=Release
 ARG USER_DEFINED_COINBASE=OFF
 ARG USER_DEFINED_COINBASE_SIZE=10
@@ -22,6 +23,7 @@ ARG WORK_WITH_STRATUM_SWITCHER=OFF
 # Copy & build btcpool
 COPY . /tmp/btcpool
 RUN mkdir -p /tmp/build && cd /tmp/build && cmake \
+    -DBPOOL_GIT_DESCRIBE=${GIT_DESCRIBE} \
     -DBUILD_TESTING=${BUILD_TESTING} \
     -DCHAIN_SRC_ROOT=/work/blockchain \
     -DCHAIN_TYPE=${CHAIN_TYPE} \
@@ -34,8 +36,7 @@ RUN mkdir -p /tmp/build && cd /tmp/build && cmake \
     -DPOOL__USER_DEFINED_COINBASE=${USER_DEFINED_COINBASE} \
     -DPOOL__WORK_WITH_STRATUM_SWITCHER=${WORK_WITH_STRATUM_SWITCHER} \
     /tmp/btcpool
-RUN cd /tmp/build && make -j${BUILD_JOBS}
-RUN cd /tmp/build && make package && mkdir -p /work/package && cp *.deb /work/package/
+RUN cd /tmp/build && make package -j${BUILD_JOBS} && mkdir -p /work/package && cp *.deb /work/package/
 
 ######### Release image #########
 FROM ubuntu:18.04
@@ -67,6 +68,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# startup scripts
+COPY ./docker/btcpool/deploy/entrypoint.sh ./docker/btcpool/deploy/wait-for-it.sh /
+
 # entrypoint
-COPY ./docker/btcpool/deploy/entrypoint.sh /
-ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]

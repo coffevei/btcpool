@@ -8,7 +8,7 @@ static const uint64_t EDGE_BLOCK_MASK = EDGE_BLOCK_SIZE - 1;
 // fills buffer with EDGE_BLOCK_SIZE siphash outputs for block containing edge in cuckaroo graph
 // return siphash output for given edge
 static uint64_t sip_block(siphash_keys &keys, uint64_t edge, uint64_t *buf) {
-  siphash_state shs(keys);
+  siphash_state<> shs(keys);
   uint64_t edge0 = edge & ~EDGE_BLOCK_MASK;
   for (size_t i = 0; i < EDGE_BLOCK_SIZE; i++) {
     shs.hash24(edge0 + i);

@@ -63,6 +63,8 @@ void StratumSessionBeam::sendMiningNotify(
     ljob = &addLocalJob(exJobPtr->chainId_, job->jobId_, inputHash);
   } else {
     dispatcher_->addLocalJob(*ljob);
+    // update the job id to the latest one
+    ljob->jobId_ = job->jobId_;
   }
 
   uint32_t shareBits = Beam_DiffToBits(currentJobDiff_);
@@ -88,7 +90,7 @@ void StratumSessionBeam::sendMiningNotify(
   sendData(strNotify); // send notify string
 
   // clear localBeamJobs_
-  clearLocalJobs();
+  clearLocalJobs(exJobPtr->isClean_);
 }
 
 bool StratumSessionBeam::validate(
@@ -158,7 +160,7 @@ void StratumSessionBeam::responseError(const string &idStr, int code) {
       "\"id\":%s,"
       "\"jsonrpc\":\"2.0\","
       "\"method\":\"result\","
-      "\"code\":%d,"
+      "\"code\":-%d,"
       "\"description\":\"%s\""
       "}\n",
       idStr,

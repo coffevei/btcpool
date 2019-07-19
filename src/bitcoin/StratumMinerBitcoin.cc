@@ -210,8 +210,14 @@ void StratumMinerBitcoin::handleRequest_Submit(
   auto &server = session.getServer();
   auto &worker = session.getWorker();
 
-  const string extraNonce2Hex = Strings::Format("%016x", extraNonce2);
-  assert(extraNonce2Hex.length() / 2 == kExtraNonce2Size_);
+  // Prevent changing unused bits to bypass the duplicate share checking
+  if (server.extraNonce2Size() < sizeof(extraNonce2)) {
+    extraNonce2 &= (1ull << server.extraNonce2Size() * 8) - 1;
+  }
+
+  const string extraNonce2Hex = Strings::Format(
+      "%0" + std::to_string(server.extraNonce2Size() * 2) + "x", extraNonce2);
+  assert(extraNonce2Hex.size() == server.extraNonce2Size() * 2);
 
   // a function to log rejected stale share
   auto rejectStaleShare = [&](size_t chainId) {
@@ -352,14 +358,29 @@ void StratumMinerBitcoin::handleRequest_Submit(
   }
 
   if (isSendShareToKafka) {
+    if (server.useShareV1()) {
+      ShareBitcoinBytesV1 sharev1;
+      sharev1.jobId_ = share.jobid();
+      sharev1.workerHashId_ = share.workerhashid();
+      sharev1.ip_ = ip.toIpv4Int();
+      sharev1.userId_ = share.userid();
+      sharev1.shareDiff_ = share.sharediff();
+      sharev1.timestamp_ = share.timestamp();
+      sharev1.blkBits_ = share.blkbits();
+      sharev1.result_ = StratumStatus::isAccepted(share.status())
+          ? ShareBitcoinBytesV1::ACCEPT
+          : ShareBitcoinBytesV1::REJECT;
 
-    std::string message;
-    uint32_t size = 0;
-    if (!share.SerializeToArrayWithVersion(message, size)) {
-      LOG(ERROR) << "share SerializeToBuffer failed!" << share.toString();
-      return;
+      server.sendShare2Kafka(
+          localJob->chainId_, (char *)&sharev1, sizeof(sharev1));
+    } else {
+      std::string message;
+      uint32_t size = 0;
+      if (!share.SerializeToArrayWithVersion(message, size)) {
+        LOG(ERROR) << "share SerializeToBuffer failed!" << share.toString();
+        return;
+      }
+      server.sendShare2Kafka(localJob->chainId_, message.data(), size);
     }
-
-    server.sendShare2Kafka(localJob->chainId_, message.data(), size);
   }
 }

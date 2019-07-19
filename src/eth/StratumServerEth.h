@@ -31,8 +31,6 @@
 #include "StratumServer.h"
 #include "StratumEth.h"
 
-#include <boost/optional.hpp>
-
 class JobRepositoryEth;
 
 class ServerEth : public ServerBase<JobRepositoryEth> {
@@ -56,7 +54,7 @@ public:
       const uint64_t networkDiff,
       const StratumWorker &worker,
       const EthConsensus::Chain chain,
-      const boost::optional<uint32_t> &sessionId);
+      const string &extraNonce);
 
   JobRepository *createJobRepository(
       size_t chainId,
@@ -76,6 +74,7 @@ protected:
 
   std::mutex lock_;
   std::map<uint64_t /*epoch*/, ethash_light_t> lightCaches_;
+  std::set<uint64_t /*epoch*/> buildingLightCaches_;
   std::queue<uint64_t> lightEpochs_;
   string cacheFile_;
 

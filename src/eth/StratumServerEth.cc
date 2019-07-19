@@ -247,6 +247,14 @@ void EthashCalculator::buildDagCache(uint64_t height) {
   }
 
   auto buildLightWithLock = [this](uint64_t height, uint64_t epoch) {
+    {
+      ScopeLock sl(lock_);
+      if (buildingLightCaches_.find(epoch) != buildingLightCaches_.end()) {
+        return;
+      }
+      buildingLightCaches_.insert(epoch);
+    }
+
     LOG(INFO) << "building DAG cache for block height " << height << " (epoch "
               << epoch << ")";
     time_t beginTime = time(nullptr);
@@ -260,6 +268,8 @@ void EthashCalculator::buildDagCache(uint64_t height) {
               << ") built within " << (time(nullptr) - beginTime) << " seconds";
 
     ScopeLock sl(lock_);
+    buildingLightCaches_.erase(epoch);
+
     if (lightCaches_[epoch] != nullptr) {
       // Other threads have added the same light.
       ethash_light_delete(light);
@@ -556,7 +566,7 @@ void ServerEth::sendSolvedShare2Kafka(
     const uint64_t networkDiff,
     const StratumWorker &worker,
     const EthConsensus::Chain chain,
-    const boost::optional<uint32_t> &sessionId) {
+    const string &extraNonce) {
   string msg = Strings::Format(
       "{\"nonce\":\"%s\",\"header\":\"%s\",\"mix\":\"%s\""
       ",\"height\":%u,\"networkDiff\":%u"
@@ -570,7 +580,7 @@ void ServerEth::sendSolvedShare2Kafka(
       strMix,
       height,
       networkDiff,
-      sessionId ? Strings::Format(",\"extraNonce\":%u", *sessionId) : "",
+      extraNonce,
       worker.userId(chainId),
       worker.workerHashId_,
       filterWorkerName(worker.fullName_),

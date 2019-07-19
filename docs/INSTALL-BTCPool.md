@@ -29,7 +29,7 @@ apt-get install -y build-essential autotools-dev libtool autoconf automake pkg-c
                    openssl libssl-dev libcurl4-openssl-dev libconfig++-dev \
                    libboost-all-dev libgmp-dev libmysqlclient-dev libzookeeper-mt-dev \
                    libzmq3-dev libgoogle-glog-dev libhiredis-dev zlib1g zlib1g-dev \
-                   libprotobuf-dev protobuf-compiler
+                   libsodium-dev libprotobuf-dev protobuf-compiler
 ```
 
 Notice: It is no longer recommended to install `libevent-dev` from the software source.
@@ -45,7 +45,7 @@ aptitude install build-essential autotools-dev libtool autoconf automake pkg-con
                    openssl libssl-dev libcurl4-openssl-dev libconfig++-dev \
                    libboost-all-dev libgmp-dev libmysqlclient-dev libzookeeper-mt-dev \
                    libzmq3-dev libgoogle-glog-dev libhiredis-dev zlib1g zlib1g-dev \
-                   libprotobuf-dev protobuf-compiler
+                   libsodium-dev libprotobuf-dev protobuf-compiler
 
 # Input `n` if the solution is `NOT INSTALL` some package.
 # Eventually aptitude will give a solution that downgrade some packages to allow all packages to be installed.
@@ -53,13 +53,14 @@ aptitude install build-essential autotools-dev libtool autoconf automake pkg-con
 
 * build libevent from its master branch
 
-Notice: **the release and stable version of libevent will cause a dead lock bug in sserver** ([issue #75](https://github.com/btccom/btcpool/issues/75)), so use the code from the master branch. 
+Notice: **libevent before release-2.1.9-beta will cause a dead lock bug in sserver** ([issue #75](https://github.com/btccom/btcpool/issues/75)). Please use **release-2.1.9-beta** and later.
 ```
-git clone https://github.com/libevent/libevent.git
-cd libevent
+wget https://github.com/libevent/libevent/releases/download/release-2.1.10-stable/libevent-2.1.10-stable.tar.gz
+tar zxf libevent-2.1.10-stable.tar.gz
+cd libevent-2.1.10-stable
 ./autogen.sh
 ./configure --disable-shared
-make && make install
+make -j$(nproc) && make install
 ```
 
 * build librdkafka-v0.9.1
@@ -68,7 +69,7 @@ make && make install
 wget https://github.com/edenhill/librdkafka/archive/0.9.1.tar.gz
 tar zxvf 0.9.1.tar.gz
 cd librdkafka-0.9.1
-./configure && make && make install
+./configure && make -j$(nproc) && make install
 
 # if you want to keep static libraries only
 rm -v /usr/local/lib/librdkafka*.so /usr/local/lib/librdkafka*.so.*
@@ -127,17 +128,17 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=BTC -DCHAIN_SRC_ROOT=/work/bitcoin-0.16.0 ..
-make -j4
+make -j$(nproc)
 
 # Release build at macOS:
 cmake -DCHAIN_TYPE=BTC -DCHAIN_SRC_ROOT=/work/bitcoin-0.16.0 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
-make
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=BTC -DCHAIN_SRC_ROOT=/work/bitcoin-0.16.0 ..
-make
+make -j$(nproc)
 ```
 
 **build BTCPool that linking to BitcoinCash ABC**
@@ -153,17 +154,17 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=BCH -DCHAIN_SRC_ROOT=/work/bitcoin-abc-0.18.5 ..
-make -j4
+make -j$(nproc)
 
 # Release build at macOS:
 cmake -DCHAIN_TYPE=BCH -DCHAIN_SRC_ROOT=/work/bitcoin-abc-0.18.5 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
-make
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=BCH -DCHAIN_SRC_ROOT=/work/bitcoin-abc-0.18.5 ..
-make
+make -j$(nproc)
 ```
 
 Note: `bitcoin-abc-0.17.1` and earlier are incompatible with current BTCPool, you will meet this error:
@@ -182,17 +183,17 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=BSV -DCHAIN_SRC_ROOT=/work/bitcoin-sv-0.1.0 ..
-make -j4
+make -j$(nproc)
 
 # Release build at macOS:
 cmake -DCHAIN_TYPE=BSV -DCHAIN_SRC_ROOT=/work/bitcoin-sv-0.1.0 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
-make
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=BSV -DCHAIN_SRC_ROOT=/work/bitcoin-sv-0.1.0 ..
-make
+make -j$(nproc)
 ```
 
 **build BTCPool that linking to UnitedBitcoin**
@@ -200,8 +201,10 @@ make
 ```bash
 mkdir /work
 cd /work
-wget -O UnitedBitcoin-2.2.0.3.tar.gz https://github.com/UnitedBitcoin/UnitedBitcoin/archive/v2.2.0.3.tar.gz
-tar zxf UnitedBitcoin-2.2.0.3.tar.gz
+# Notice: v2.5.0.1-1.tar.gz from UnitedBitcoin official is wrong (missing one commit),
+#         So here we use the release of our own fork.
+wget -O UnitedBitcoin-2.5.0.1-1.tar.gz https://github.com/btccom/UnitedBitcoin/archive/v2.5.0.1-1.tar.gz
+tar zxf UnitedBitcoin-2.5.0.1-1.tar.gz
 
 # install libdb that UnitedBitcoin's wallet required
 apt-get install -y software-properties-common
@@ -210,10 +213,10 @@ apt-get -y update
 apt-get install -y libdb4.8-dev libdb4.8++-dev
 
 # UnitedBitcoin will build failed with `--disable-wallet`, so we have to build it manually with wallet
-cd UnitedBitcoin-2.2.0.3
+cd UnitedBitcoin-2.5.0.1-1
 ./autogen.sh
 ./configure --disable-bench --disable-tests
-make -j4
+make -j$(nproc)
 
 cd ..
 git clone https://github.com/btccom/btcpool.git
@@ -221,17 +224,17 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
-cmake -DJOBS=4 -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.2.0.3 ..
-make -j4
+# Release build:
+cmake -DJOBS=4 -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.5.0.1-1 ..
+make -j$(nproc)
 
 # Release build at macOS:
-cmake -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.2.0.3 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
-make
+cmake -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.5.0.1-1 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
+make -j$(nproc)
 
 # Debug build:
-cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.2.0.3 ..
-make
+cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=UBTC -DCHAIN_SRC_ROOT=/work/UnitedBitcoin-2.5.0.1-1 ..
+make -j$(nproc)
 ```
 
 **build BTCPool that linking to SuperBitcoin**
@@ -253,17 +256,17 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=SBTC -DCHAIN_SRC_ROOT=/work/SuperBitcoin-0.17.1 ..
-make -j4
+make -j$(nproc)
 
 # Release build at macOS:
 cmake -DCHAIN_TYPE=SBTC -DCHAIN_SRC_ROOT=/work/SuperBitcoin-0.17.1 -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ..
-make
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=SBTC -DCHAIN_SRC_ROOT=/work/SuperBitcoin-0.17.1 ..
-make
+make -j$(nproc)
 ```
 
 **build BTCPool that linking to Litecoin**
@@ -279,13 +282,13 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=LTC -DCHAIN_SRC_ROOT=/work/litecoin-0.16.3 ..
-make -j4
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=LTC -DCHAIN_SRC_ROOT=/work/litecoin-0.16.3 ..
-make -j4
+make -j$(nproc)
 ```
 
 **build BTCPool that linking to ZCash**
@@ -301,13 +304,13 @@ cd btcpool
 mkdir build
 cd build
 
-# Release build with 4 jobs:
+# Release build:
 cmake -DJOBS=4 -DCHAIN_TYPE=ZEC -DCHAIN_SRC_ROOT=/work/zcash-2.0.4 ..
-make -j4
+make -j$(nproc)
 
 # Debug build:
 cmake -DCMAKE_BUILD_TYPE=Debug -DCHAIN_TYPE=ZEC -DCHAIN_SRC_ROOT=/work/zcash-2.0.4 ..
-make -j4
+make -j$(nproc)
 ```
 
 **How about ETH/ETC/Beam/Grin/Decred/Bytom?**
@@ -318,7 +321,7 @@ Please use the build that linking to Bitcoin (`-DCHAIN_TYPE=BTC`).
 
 ## Init btcpool
 
-### init the running folders
+### Init the Running Folders
 
 Now create folder for btcpool, if you are going to run all service in one machine you could run `install/init_folders.sh` as below.
 
@@ -327,7 +330,7 @@ cd /work/btcpool/build
 bash ../install/init_folders.sh
 ```
 
-### setup full-nodes
+### Setup Full-Nodes
 Before starting btcpool's services, at least one bitcoin full-node needs to be setup. Which full-node to use depends on the blockchain you want to mining.
 
 Also start Rsk node or Namecoin node if merged mining for any of those chains.
@@ -349,7 +352,11 @@ The following are some dockerfiles of full-nodes:
 
 If you want to merge-mining more than one chains that follow [Bitcoin Merged Mining Specification](https://en.bitcoin.it/wiki/Merged_mining_specification) (likes Namecoin, ElastOS, etc), you can running a [Merged Mining Proxy](https://github.com/btccom/btcpool-go-modules/tree/master/mergedMiningProxy) and let the pool's `nmcauxmaker` connect to it.
 
-### init MySQL databases & tables
+### Configure Merged Mining
+
+See [MergedMining.md](MergedMining.md) for more details of bitcoin/litecoin merged mining.
+
+### Init MySQL Databases & Tables
 The pool's `statshttpd`, `slparser` and `blkmaker` will write miners', users' & blockchains' information to mysql. We recommend that you create two databases and import the corresponding tables.
 
 ```bash
@@ -375,9 +382,9 @@ USE bpool_local_stats_db;
 SOURCE bpool_local_stats_db.sql;
 ```
 
-### (optional) install Redis
+### Install Redis (Optional)
 
-If you want to install Redis as your `statshttpd`'s optional storage, refer to [](INSTALL-Redis.md).
+If you want to install Redis as your `statshttpd`'s optional storage, refer to [INSTALL-Redis.md](INSTALL-Redis.md).
 
 ### User list API
 
@@ -462,7 +469,7 @@ $ supervisorctl
 
 
 #
-# start your stratum server(see below) and add some miners to the pool, after make
+# start your stratum server(see below) and add some miners to the pool, after make -j$(nproc)
 # some shares than start 'slparser' & 'statshttpd'
 #
 cp slparser.conf      /etc/supervisor/conf.d
@@ -516,7 +523,7 @@ Get the latest codes and rebuild:
 cd /work/btcpool/build
 git pull
 cmake ..
-make
+make -j$(nproc)
 ```
 
 use `supervisorctl` to restart your services:

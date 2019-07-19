@@ -185,7 +185,7 @@ bool JobRepository::setupThreadConsume() {
     return false;
   }
 
-  threadConsume_ = thread(&JobRepository::runThreadConsume, this);
+  threadConsume_ = std::thread(&JobRepository::runThreadConsume, this);
   return true;
 }
 
@@ -377,6 +377,8 @@ StratumServer::StratumServer()
   , base_(nullptr)
   , listener_(nullptr)
   , tcpReadTimeout_(600)
+  , shutdownGracePeriod_(3600)
+  , disconnectTimer_(nullptr)
   , acceptStale_(true)
   , isEnableSimulator_(false)
   , isSubmitInvalidBlock_(false)
@@ -400,6 +402,10 @@ StratumServer::~StratumServer() {
 
     // Destroy exporter before event base
     statsExporter_.reset();
+  }
+
+  if (disconnectTimer_ != nullptr) {
+    event_free(disconnectTimer_);
   }
 
   if (listener_ != nullptr) {
@@ -478,13 +484,14 @@ bool StratumServer::setup(const libconfig::Config &config) {
   // ------------------- Diff Controller Options -------------------
 
   string defDiffStr = config.lookup("sserver.default_difficulty");
-  uint64_t defaultDifficulty = stoull(defDiffStr, nullptr, 16);
+  uint64_t defaultDifficulty =
+      formatDifficulty(stoull(defDiffStr, nullptr, 16));
 
   string maxDiffStr = config.lookup("sserver.max_difficulty");
-  uint64_t maxDifficulty = stoull(maxDiffStr, nullptr, 16);
+  uint64_t maxDifficulty = formatDifficulty(stoull(maxDiffStr, nullptr, 16));
 
   string minDiffStr = config.lookup("sserver.min_difficulty");
-  uint64_t minDifficulty = stoull(minDiffStr, nullptr, 16);
+  uint64_t minDifficulty = formatDifficulty(stoull(minDiffStr, nullptr, 16));
 
   uint32_t diffAdjustPeriod = 300;
   config.lookupValue("sserver.diff_adjust_period", diffAdjustPeriod);
@@ -740,7 +747,7 @@ bool StratumServer::setup(const libconfig::Config &config) {
       base_,
       StratumServer::listenerCallback,
       (void *)this,
-      LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE,
+      LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE_PORT,
       -1,
       (struct sockaddr *)&sin_,
       sizeof(sin_));
@@ -748,6 +755,11 @@ bool StratumServer::setup(const libconfig::Config &config) {
     LOG(ERROR) << "cannot create listener: " << listenIP << ":" << listenPort;
     return false;
   }
+
+  // initialize but don't activate the graceful shutdown disconnect timer event
+  config.lookupValue("sserver.shutdown_grace_period", shutdownGracePeriod_);
+  disconnectTimer_ = event_new(
+      base_, -1, EV_PERSIST, &StratumServer::disconnectCallback, this);
 
   // check if TLS enabled
   config.lookupValue("sserver.enable_tls", enableTLS_);
@@ -800,6 +812,23 @@ void StratumServer::stop() {
     chain.jobRepository_->stop();
   }
   userInfo_->stop();
+}
+
+void StratumServer::stopGracefully() {
+  LOG(INFO) << "stop stratum server gracefully";
+
+  // Stop listening & trigger gracefully disconnecting timer
+  evconnlistener_disable(listener_);
+  if (connections_.empty()) {
+    dispatch([this]() { stop(); });
+  } else {
+    timeval timeout;
+    timeout.tv_sec = shutdownGracePeriod_ / connections_.size();
+    timeout.tv_usec =
+        (shutdownGracePeriod_ - timeout.tv_sec * connections_.size()) *
+        1000000 / connections_.size();
+    event_add(disconnectTimer_, &timeout);
+  }
 }
 
 namespace {
@@ -917,6 +946,11 @@ void StratumServer::listenerCallback(
   int yes = 1;
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(int));
 
+  // When we want to close the connection we want to send RST instead of FIN so
+  // that miners will be disconnected immediately.
+  linger lingerOn{1, 0};
+  setsockopt(fd, SOL_SOCKET, SO_LINGER, &lingerOn, sizeof(struct linger));
+
   if (server->enableTLS_) {
     SSL *ssl = SSL_new(server->sslCTX_);
     if (ssl == nullptr) {
@@ -961,6 +995,21 @@ void StratumServer::listenerCallback(
   bufferevent_enable(bev, EV_READ | EV_WRITE);
 
   server->addConnection(move(conn));
+}
+
+void StratumServer::disconnectCallback(int, short, void *context) {
+  auto server = static_cast<StratumServer *>(context);
+  if (server->connections_.empty()) {
+    server->stop();
+  } else {
+    auto iter = server->connections_.begin();
+    auto iend = server->connections_.end();
+    StratumSession::State state;
+    do {
+      state = (*iter)->getState();
+      iter = server->connections_.erase(iter);
+    } while (state < StratumSession::AUTHENTICATED && iter != iend);
+  }
 }
 
 void StratumServer::readCallback(struct bufferevent *bev, void *connection) {

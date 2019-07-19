@@ -138,8 +138,12 @@ vector<string> ZookeeperLock::getLockNodes() {
 
 void ZookeeperLock::getLockWatcher(
     zhandle_t *zh, int type, int state, const char *path, void *pMutex) {
+  if (pMutex == nullptr) {
+    return;
+  }
   DLOG(INFO) << "ZookeeperLock::getLockWatcher: type:" << type
-             << ", state:" << state << ", path:" << path;
+             << ", state:" << state
+             << ", path:" << (path != nullptr ? path : "");
   pthread_mutex_unlock((pthread_mutex_t *)pMutex);
 }
 
@@ -339,8 +343,13 @@ template class ZookeeperUniqIdT<8>;
 void Zookeeper::globalWatcher(
     zhandle_t *zh, int type, int state, const char *path, void *pZookeeper) {
   try {
+    if (pZookeeper == nullptr) {
+      return;
+    }
+
     DLOG(INFO) << "Zookeeper::globalWatcher: type:" << type
-               << ", state:" << state << ", path:" << path;
+               << ", state:" << state
+               << ", path:" << (path != nullptr ? path : "");
 
     Zookeeper *zk = (Zookeeper *)pZookeeper;
 
@@ -353,6 +362,11 @@ void Zookeeper::globalWatcher(
         LOG(INFO) << "Zookeeper: reconnected to broker.";
         zk->recoveryLock();
         zk->recoveryUniqId();
+
+        // Execute custom reconnect handles.
+        for (auto func : zk->reconnectHandles_) {
+          func();
+        }
       } else if (state == ZOO_CONNECTING_STATE) {
         LOG(ERROR) << "Zookeeper: lost the connection from broker.";
       } else if (state == ZOO_AUTH_FAILED_STATE) {
@@ -367,6 +381,12 @@ void Zookeeper::globalWatcher(
         LOG(INFO) << "Zookeeper: connected to broker.";
         zk->connected_ = true;
         pthread_cond_signal(&zk->watchctx_.cond);
+
+        // Execute custom reconnect handles.
+        // Run here after recoverySession() is complete.
+        for (auto func : zk->reconnectHandles_) {
+          func();
+        }
       }
     }
   } catch (const std::exception &ex) {
@@ -476,6 +496,10 @@ bool Zookeeper::removeUniqId(shared_ptr<ZookeeperUniqId> id) {
   return false;
 }
 
+void Zookeeper::registerReconnectHandle(std::function<void()> func) {
+  reconnectHandles_.push_back(func);
+}
+
 void Zookeeper::recoveryLock() {
   for (auto lock : locks_) {
     lock->recoveryLock();
@@ -508,8 +532,8 @@ void Zookeeper::watchNode(
 
 string Zookeeper::getValue(const string &nodePath, size_t sizeLimit) {
   string data;
-  data.resize(sizeLimit);
 
+  data.resize(sizeLimit);
   int size = data.size();
   int stat =
       zoo_get(zh_, nodePath.c_str(), 0, (char *)data.data(), &size, nullptr);
@@ -527,8 +551,11 @@ string Zookeeper::getValue(const string &nodePath, size_t sizeLimit) {
 bool Zookeeper::getValueW(
     const string &nodePath,
     string &value,
+    size_t sizeLimit,
     ZookeeperWatcherCallback func,
     void *data) {
+
+  value.resize(sizeLimit);
   int size = value.size();
   int stat = zoo_wget(
       zh_, nodePath.c_str(), func, data, (char *)value.data(), &size, nullptr);
@@ -558,6 +585,24 @@ vector<string> Zookeeper::getChildren(const string &parentPath) {
   }
 
   return children;
+}
+
+bool Zookeeper::getChildrenW(
+    const string &parentPath,
+    vector<string> &children,
+    ZookeeperWatcherCallback func,
+    void *data) {
+  struct String_vector nodes = {0, nullptr};
+  int stat = zoo_wget_children(zh_, parentPath.c_str(), func, data, &nodes);
+
+  if (stat != ZOK) {
+    return false;
+  }
+
+  for (int i = 0; i < nodes.count; i++) {
+    children.push_back(nodes.data[i]);
+  }
+  return true;
 }
 
 void Zookeeper::createNode(const string &nodePath, const string &value) {

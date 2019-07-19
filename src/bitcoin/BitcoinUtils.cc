@@ -252,14 +252,42 @@ int64_t GetBlockReward(int nHeight, const Consensus::Params &consensusParams) {
   if (nHeight < Params().GetConsensus().ForkV1Height) {
     halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
     // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64) {
+    if (halvings >= 64)
       return 0;
-    }
 
-    int64_t nSubsidy = 50 * COIN_TO_SATOSHIS;
+    CAmount nSubsidy = 50 * COIN;
     // Subsidy is cut in half every 210,000 blocks which will occur
     // approximately every 4 years.
     nSubsidy >>= halvings;
+    return nSubsidy;
+  } else if (
+      nHeight >= Params().GetConsensus().ForkV1Height &&
+      nHeight < Params().GetConsensus().ForkV4Height) {
+    int halfPeriodLeft = consensusParams.ForkV1Height - 1 -
+        consensusParams.nSubsidyHalvingInterval * 2;
+    int halfPeriodRight =
+        (consensusParams.nSubsidyHalvingInterval - halfPeriodLeft) * 10;
+
+    int PeriodEndHeight = consensusParams.ForkV1Height - 1 +
+        (consensusParams.nSubsidyHalvingInterval - halfPeriodLeft) * 10;
+    if (nHeight <= PeriodEndHeight)
+      halvings = 2;
+    else {
+      halvings = 3 +
+          (nHeight - PeriodEndHeight - 1) /
+              (consensusParams.nSubsidyHalvingInterval * 10);
+    }
+
+    // Force block reward to zero when right shift is undefined.
+    if (halvings >= 64)
+      return 0;
+
+    CAmount nSubsidy = 50 * COIN;
+    // Subsidy is cut in half every 210,000 blocks which will occur
+    // approximately every 4 years.
+    nSubsidy >>= halvings;
+    nSubsidy = nSubsidy / 10 * 0.8;
+
     return nSubsidy;
   } else {
     int halfPeriodLeft = consensusParams.ForkV1Height - 1 -
@@ -278,15 +306,14 @@ int64_t GetBlockReward(int nHeight, const Consensus::Params &consensusParams) {
     }
 
     // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64) {
+    if (halvings >= 64)
       return 0;
-    }
 
-    int64_t nSubsidy = 50 * COIN_TO_SATOSHIS;
+    CAmount nSubsidy = 50 * COIN;
     // Subsidy is cut in half every 210,000 blocks which will occur
     // approximately every 4 years.
     nSubsidy >>= halvings;
-    nSubsidy = nSubsidy / 10 * 0.8;
+    nSubsidy = nSubsidy / 10 * 0.4;
 
     return nSubsidy;
   }
@@ -508,4 +535,38 @@ uint256 SwapUint(const uint256 &hash) {
     *(uint32_t *)(BEGIN(h) + (7 - i) * 4) = SwapUint(a);
   }
   return h;
+}
+
+uint256 reverse8bit(uint256 &&hash) {
+  for (char *i = BEGIN(hash), *j = i + 31; i < j; i++, j--) {
+    char tmp = *i;
+    *i = *j;
+    *j = tmp;
+  }
+  return hash;
+}
+
+uint256 reverse32bit(uint256 &&hash) {
+  for (uint32_t *i = (uint32_t *)BEGIN(hash), *j = i + 7; i < j; i++, j--) {
+    uint32_t tmp = *i;
+    *i = *j;
+    *j = tmp;
+  }
+  return hash;
+}
+
+string reverse16bit(string &&hash) {
+  for (uint16_t *i = (uint16_t *)hash.data(), *j = i + (hash.size() / 2) - 1;
+       i < j;
+       i++, j--) {
+    uint16_t tmp = *i;
+    *i = *j;
+    *j = tmp;
+  }
+  return hash;
+}
+
+string reverse16bit(const string &hash) {
+  string newHash = hash;
+  return reverse16bit(std::move(newHash));
 }
